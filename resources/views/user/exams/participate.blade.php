@@ -18,6 +18,10 @@
         font-size: 14px;
         background: #fff;
     }
+    .cpns-section-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+    .cpns-section-tab { border: 1px solid #dbe2ea; background: #fff; color: #1f2937; border-radius: 999px; padding: 6px 14px; font-weight: 700; font-size: 0.85rem; cursor: pointer; }
+    .cpns-section-tab:hover { border-color: #2563eb; color: #2563eb; }
+    .current-section-badge { background: #eff6ff; color: #1d4ed8; border-radius: 6px; padding: 2px 8px; font-size: 0.8rem; font-weight: 700; margin-left: 8px; }
 </style>
 @endpush
 
@@ -117,11 +121,23 @@
             </div>
         </div>
 
+        @if($exam->isCpns() && $questions->isNotEmpty())
+            <div class="cpns-section-tabs">
+                @foreach($questions->groupBy('section_code') as $code => $group)
+                    @php $firstIndex = $group->keys()->first(); @endphp
+                    <button type="button" class="cpns-section-tab" data-index="{{ $firstIndex }}">{{ $code }} ({{ $group->count() }})</button>
+                @endforeach
+            </div>
+        @endif
+
         <div class="exam-body-container">
             <div class="question-workspace">
                 <div class="zi-card question-card">
                     <div class="question-index-badge">
                         {{ __('frontend.question_label') }} <span id="current-q-num">1</span> {{ __('frontend.of_label') }} {{ $questions->count() }}
+                        @if($exam->isCpns())
+                            <span class="current-section-badge" id="current-section"></span>
+                        @endif
                     </div>
                     <div id="question-container">
                         <div class="question-content">

@@ -41,6 +41,12 @@
                     </span>
                     <span class="text-muted">|</span>
                     <span>{{ __('questions.total_questions') }}: <strong class="text-dark">{{ $exam->questions_count }}</strong></span>
+                    @if($exam->isCpns())
+                        <span class="text-muted">|</span>
+                        @foreach($exam->sections as $section)
+                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2">{{ $section->code }} {{ $sectionCounts[$section->id] ?? 0 }}/{{ $section->question_count }}</span>
+                        @endforeach
+                    @endif
                 </div>
             </div>
             
@@ -126,6 +132,9 @@
                                 @else
                                     <span class="badge bg-light border text-muted rounded-2 px-2 py-1 fs-xs">{{ strtoupper(str_replace('_', ' ', $question->type)) }}</span>
                                 @endif
+                                @if($question->examSection)
+                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-2 px-2 py-1 fs-xs">{{ $question->examSection->code }}</span>
+                                @endif
                                 @if($isRichMediaQuestion) <span class="badge bg-info text-white rounded-2 px-2 py-1 fs-xs border border-info"><i class="fa-solid fa-photo-film me-1"></i> {{ strtoupper($question->media_type) }}</span> @endif
                             </div>
                         </div>
@@ -144,6 +153,8 @@
                                 data-correct="{{ $question->correct_answer }}"
                                 data-explanation="{{ $question->explanation }}"
                                 data-options='@json($question->options)'
+                                data-section="{{ $question->exam_section_id }}"
+                                data-option-scores='@json($question->option_scores)'
                                 data-media-url="{{ $question->media_url ?? '' }}">
                             <i class="fa-solid fa-pen"></i>
                         </button>

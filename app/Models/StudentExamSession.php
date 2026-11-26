@@ -17,6 +17,7 @@ class StudentExamSession extends Model
         'total_questions',
         'completed_questions', 
         'correct_answers', 
+        'total_answered',
         'score',
         'progress_percentage', 
         'start_time', 
@@ -58,6 +59,11 @@ class StudentExamSession extends Model
         return $this->hasMany(StudentExamAnswer::class);
     }
 
+    public function sectionScores(): HasMany
+    {
+        return $this->hasMany(StudentExamSectionScore::class);
+    }
+
     public function getIsPublishedAttribute(): bool
     {
         if (!$this->exam) return false;
@@ -81,6 +87,13 @@ class StudentExamSession extends Model
     public function getIsPassedAttribute(): bool
     {
         if (!$this->exam) return false;
+
+        if ($this->exam->isCpns()) {
+            $scores = $this->sectionScores;
+            if ($scores->isEmpty()) return false;
+            return $scores->every(fn ($score) => (bool) $score->passed);
+        }
+
         return $this->progress_percentage >= $this->exam->pass_percentage;
     }
 

@@ -327,6 +327,7 @@ document.addEventListener("DOMContentLoaded", function() {
         }
 
         const titleInput = document.getElementById('edit_title');
+        const typeInput = document.getElementById('edit_type');
         const catInput = document.getElementById('edit_category');
         const durationInput = document.getElementById('edit_duration');
         const passInput = document.getElementById('edit_pass_percentage');
@@ -359,6 +360,15 @@ document.addEventListener("DOMContentLoaded", function() {
                 if(editForm) editForm.action = data.action;
 
                 if(titleInput) titleInput.value = data.title;
+
+                if(typeInput) {
+                    typeInput.value = data.type || 'standard';
+                    let sections = [];
+                    try { sections = JSON.parse(data.sections || '[]'); } catch (error) { sections = []; }
+                    if (typeof window.fillEditSections === 'function') window.fillEditSections(sections);
+                    if (typeof window.toggleEditSections === 'function') window.toggleEditSections(false);
+                }
+
                 if(catInput) catInput.value = data.category;
                 if(durationInput) durationInput.value = data.duration;
                 if(passInput) passInput.value = data.pass;

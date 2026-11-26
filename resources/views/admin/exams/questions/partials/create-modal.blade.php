@@ -5,6 +5,32 @@
     submitText="{{ __('questions.create_submit_btn') }}"
 >
     <input type="hidden" name="exam_id" value="{{ $exam->id }}">
+
+    @if($exam->isCpns() && $exam->sections->isNotEmpty())
+        @php
+            $sectionMeta = $exam->sections->map(fn ($s) => ['id' => $s->id, 'code' => $s->code, 'mode' => $s->scoring_mode])->values()->toArray();
+        @endphp
+        <div class="mb-3">
+            <label for="create_section" class="form-label-premium text-uppercase fs-075 ls-wide">Subtest</label>
+            <select class="form-control-premium form-select shadow-none" id="create_section" name="exam_section_id" data-sections='{{ json_encode($sectionMeta) }}'>
+                @foreach($exam->sections as $section)
+                    <option value="{{ $section->id }}" data-mode="{{ $section->scoring_mode }}">{{ $section->code }} — {{ $section->name }}</option>
+                @endforeach
+            </select>
+        </div>
+
+        <div id="create_option_scores" class="border rounded-3 p-3 bg-light mb-3 d-none">
+            <h6 class="text-dark fw-bold mb-3 fs-085">Skor Opsi TKP (1–5)</h6>
+            <div class="row g-3">
+                @foreach(['A', 'B', 'C', 'D', 'E'] as $letter)
+                    <div class="col-4">
+                        <label class="form-label-premium small mb-1">{{ $letter }}</label>
+                        <input type="number" class="form-control-premium form-control-sm shadow-none" name="option_scores[{{ $letter }}]" min="1" max="5">
+                    </div>
+                @endforeach
+            </div>
+        </div>
+    @endif
     
     <div class="mb-3">
         <label for="create_type" class="form-label-premium text-uppercase fs-075 ls-wide">{{ __('questions.label_type') }} <span class="text-danger">*</span></label>
@@ -30,6 +56,7 @@
             <div class="col-6"><input type="text" class="form-control-premium shadow-none" name="options[B]" placeholder="{{ __('questions.option_b') }}"></div>
             <div class="col-6"><input type="text" class="form-control-premium shadow-none" name="options[C]" placeholder="{{ __('questions.option_c') }}"></div>
             <div class="col-6"><input type="text" class="form-control-premium shadow-none" name="options[D]" placeholder="{{ __('questions.option_d') }}"></div>
+            <div class="col-6" id="create_option_e_wrapper"><input type="text" class="form-control-premium shadow-none" name="options[E]" placeholder="{{ __('questions.option_e') }}"></div>
         </div>
     </div>
 
@@ -75,6 +102,7 @@
             <option value="B">Option B</option>
             <option value="C">Option C</option>
             <option value="D">Option D</option>
+            <option value="E">Option E</option>
         </select>
         <select class="form-control-premium form-select d-none shadow-none" id="create_input_correct_tf" name="correct_answer" disabled>
             <option value="True">True</option>

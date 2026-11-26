@@ -60,6 +60,7 @@ return [
     'option_b' => 'Option B',
     'option_c' => 'Option C',
     'option_d' => 'Option D',
+    'option_e' => 'Option E',
     'label_correct' => 'Correct Option (MCQ)',
     'label_explanation' => 'Explanation (For review/results)',
 

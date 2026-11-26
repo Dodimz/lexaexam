@@ -38,6 +38,7 @@ return [
     'option_b' => 'বিকল্প B',
     'option_c' => 'বিকল্প C',
     'option_d' => 'বিকল্প D',
+    'option_e' => 'বিকল্প E',
     'label_correct' => 'সঠিক বিকল্প (MCQ)',
     'label_explanation' => 'ব্যাখ্যা (রিভিউ/ফলাফলের জন্য)',
 

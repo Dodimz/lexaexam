@@ -52,6 +52,7 @@ return [
     'option_b' => 'الخيار ب',
     'option_c' => 'الخيار ج',
     'option_d' => 'الخيار د',
+    'option_e' => 'الخيار هـ',
     'label_correct' => 'الخيار الصحيح (MCQ)',
     'label_explanation' => 'التوضيح (للمراجعة/النتائج)',
 

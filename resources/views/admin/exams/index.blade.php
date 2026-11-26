@@ -119,6 +119,9 @@
                     <h5 class="text-truncate" title="{{ $exam->title }}">{{ $exam->title }}</h5>
                     <div class="item-meta mt-1">
                         <span class="text-muted">#{{ $exam->id }}</span>
+                        @if($exam->isCpns())
+                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-2">CPNS</span>
+                        @endif
                         @if($exam->is_paid)
                             <span class="badge bg-light text-dark border ms-2">{{ $currencySymbol }}{{ number_format($exam->price, 2) }}</span>
                         @else
@@ -176,6 +179,8 @@
                                 class="btn-circle edit btn-edit-exam" 
                                 data-id="{{ $exam->id }}" 
                                 data-title="{{ $exam->title }}" 
+                                data-type="{{ $exam->type }}"
+                                data-sections='{{ $exam->sections->map(fn ($s) => ["code" => $s->code, "name" => $s->name, "question_count" => $s->question_count, "max_score" => $s->max_score, "passing_score" => $s->passing_score, "points_per_correct" => $s->points_per_correct])->toJson() }}'
                                 data-category="{{ $exam->category_id }}" 
                                 data-duration="{{ $exam->duration_minutes }}" 
                                 data-pass="{{ $exam->pass_percentage }}"

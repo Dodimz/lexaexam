@@ -12,6 +12,7 @@ class Exam extends Model
         'title',
         'slug',
         'category_id',
+        'type',
         'plan_id',
         'duration_minutes',
         'pass_percentage',
@@ -64,9 +65,19 @@ class Exam extends Model
         return $this->hasMany(Question::class);
     }
 
+    public function sections(): HasMany
+    {
+        return $this->hasMany(ExamSection::class)->orderBy('sort_order');
+    }
+
     public function sessions(): HasMany
     {
         return $this->hasMany(StudentExamSession::class);
+    }
+
+    public function isCpns(): bool
+    {
+        return $this->type === 'cpns';
     }
     
     public function getBannerUrlAttribute()

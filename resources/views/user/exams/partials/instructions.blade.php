@@ -93,6 +93,21 @@
             </div>
         @endif
         
+        @if($exam->isCpns() && isset($cpnsSections) && $cpnsSections->isNotEmpty())
+            @php $cpnsReady = $cpnsSections->every(fn ($section) => $section['actual_count'] === $section['question_count']); @endphp
+            <div class="instruction-section">
+                <h3 class="instruction-title">Struktur Subtes CPNS</h3>
+                <ul>
+                    @foreach($cpnsSections as $section)
+                        <li>{{ $section['code'] }} — {{ $section['name'] }}: {{ $section['actual_count'] }}/{{ $section['question_count'] }} soal, nilai maksimal {{ $section['max_score'] }}, ambang batas {{ $section['passing_score'] }}.</li>
+                    @endforeach
+                </ul>
+                @if(!$cpnsReady)
+                    <div class="alert alert-warning mb-0">Jumlah soal belum sesuai konfigurasi. Hubungi admin sebelum memulai ujian.</div>
+                @endif
+            </div>
+        @endif
+
         <form action="{{ route('exam.start', $exam) }}" method="POST" class="instructions-footer">
             @csrf
             

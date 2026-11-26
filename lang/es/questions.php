@@ -38,6 +38,7 @@ return [
     'option_b' => 'Opción B',
     'option_c' => 'Opción C',
     'option_d' => 'Opción D',
+    'option_e' => 'Opción E',
     'label_correct' => 'Opción Correcta (MCQ)',
     'label_explanation' => 'Explicación (Para revisión/resultados)',
 

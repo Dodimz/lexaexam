@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 use App\Models\Exam;
+use App\Models\Question;
 use App\Models\StudentExamSession;
 use App\Models\StudentExamAnswer;
 use Addons\CodingAssessments\Models\CodingSubmission;
@@ -188,7 +189,8 @@ class ExamController extends Controller
             'questions' => $questionsList, 
             'existingAnswers' => $existingAnswers,
             'secondsRemaining' => $secondsRemaining,
-            'isUpcoming' => $isUpcoming 
+            'isUpcoming' => $isUpcoming,
+            'cpnsSections' => $exam->isCpns() ? $this->cpnsSectionStatus($exam) : collect(),
         ]);
     }
 
@@ -202,6 +204,16 @@ class ExamController extends Controller
 
         if (!$user->canAccessExam($exam)) {
             return redirect()->route('exams.list');
+        }
+
+        if ($exam->isCpns()) {
+            $sections = $this->cpnsSectionStatus($exam);
+            $missing = $sections->filter(fn ($section) => $section['actual_count'] !== $section['question_count']);
+
+            if ($missing->isNotEmpty()) {
+                $detail = $missing->map(fn ($section) => $section['code'] . ' ' . $section['actual_count'] . '/' . $section['question_count'])->implode(', ');
+                return redirect()->back()->with('error', 'Jumlah soal CPNS belum sesuai konfigurasi: ' . $detail);
+            }
         }
 
         $activeSession = StudentExamSession::where('user_id', $user->id)
@@ -384,8 +396,17 @@ class ExamController extends Controller
         }
 
         $isAddonActive = class_exists(CodingAssessment::class);
+        $questions = $query->get();
+        $sections = $exam->isCpns() ? $exam->sections : collect();
 
-        return $query->get()->map(function($q) use ($isAddonActive) {
+        if ($exam->isCpns() && $sections->isNotEmpty()) {
+            $order = $sections->pluck('sort_order', 'id');
+            $questions = $questions->sortBy(fn ($q) => $order[$q->exam_section_id] ?? 999)->values();
+        }
+
+        $sectionMap = $sections->keyBy('id');
+
+        return $questions->map(function($q) use ($isAddonActive, $sectionMap) {
             $rawOptions = $q->options;
             if (is_string($rawOptions)) {
                 $decoded = json_decode($rawOptions, true);
@@ -421,13 +442,17 @@ class ExamController extends Controller
             }
 
             $isRichMedia = !empty($q->media_type) && $q->media_type !== 'text';
+            $section = $sectionMap->get($q->exam_section_id);
             $formattedQuestion = [
                 'id' => $q->id,
                 'question_text' => $q->question_text,
                 'options' => $formattedOptions,
                 'type' => $q->type,
                 'coding_config' => $codingData,
-                'assessment_id' => $assessmentId
+                'assessment_id' => $assessmentId,
+                'section_id' => $section ? $section->id : null,
+                'section_code' => $section ? $section->code : null,
+                'section_name' => $section ? $section->name : null,
             ];
             
             if ($isRichMedia) {
@@ -438,5 +463,24 @@ class ExamController extends Controller
             }
             return $formattedQuestion;
         })->values();
+    }
+
+    private function cpnsSectionStatus(Exam $exam)
+    {
+        $counts = Question::where('exam_id', $exam->id)
+            ->whereNotNull('exam_section_id')
+            ->select('exam_section_id', DB::raw('count(*) as total'))
+            ->groupBy('exam_section_id')
+            ->pluck('total', 'exam_section_id');
+
+        return $exam->sections->map(fn ($section) => [
+            'id' => $section->id,
+            'code' => $section->code,
+            'name' => $section->name,
+            'question_count' => $section->question_count,
+            'actual_count' => (int) ($counts[$section->id] ?? 0),
+            'max_score' => $section->max_score,
+            'passing_score' => $section->passing_score,
+        ])->values();
     }
 }

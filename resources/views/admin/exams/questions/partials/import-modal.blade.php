@@ -25,9 +25,12 @@
                             </a>
                         </div>
                         <div class="small">
-                            <p class="mb-1"><strong>{{ __('questions.import_instructions_columns') }}:</strong> <code>question_text, type, correct_answer, options, explanation</code></p>
+                            <p class="mb-1"><strong>{{ __('questions.import_instructions_columns') }}:</strong> <code>question_text, type, correct_answer, options, explanation, section, option_scores</code></p>
                             <p class="mb-1"><strong>{{ __('questions.import_instructions_types') }}:</strong> <code>mcq, true_false, short_answer</code></p>
-                            <p class="mb-0"><strong>{{ __('questions.import_instructions_options') }}:</strong> {{ __('questions.import_instructions_options_desc') }}</p>
+                            <p class="mb-1"><strong>{{ __('questions.import_instructions_options') }}:</strong> {{ __('questions.import_instructions_options_desc') }}</p>
+                            @if($exam->isCpns())
+                                <p class="mb-0"><strong>CPNS:</strong> isi <code>section</code> dengan <code>TWK</code>, <code>TIU</code>, atau <code>TKP</code>. Untuk TKP, isi <code>option_scores</code> dengan 5 angka 1–5 dipisah <code>|</code> sesuai urutan opsi A–E; <code>correct_answer</code> boleh kosong.</p>
+                            @endif
                         </div>
                     </div>
 

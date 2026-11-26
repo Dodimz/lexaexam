@@ -56,6 +56,17 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
+    function updateCpnsUI(prefix) {
+        const sectionSelect = document.getElementById(`${prefix}_section`);
+        const option = sectionSelect ? sectionSelect.options[sectionSelect.selectedIndex] : null;
+        const isOptionScore = option && option.dataset.mode === 'option_score';
+        const scoresBox = document.getElementById(`${prefix}_option_scores`);
+        const correctBox = document.getElementById(`${prefix}_container_correct_answer`);
+
+        if (scoresBox) scoresBox.classList.toggle('d-none', !isOptionScore);
+        if (correctBox) correctBox.style.display = isOptionScore ? 'none' : 'block';
+    }
+
     function handleCodingImport(prefix) {
         const importSelect = document.getElementById(`${prefix}_import_coding_assessment`);
         if (!importSelect) return;
@@ -155,8 +166,15 @@ document.addEventListener("DOMContentLoaded", function () {
     if (createTypeSelect) {
         createTypeSelect.addEventListener('change', function() {
             updateQuestionTypeUI('create', this.value);
+            updateCpnsUI('create');
         });
         updateQuestionTypeUI('create', createTypeSelect.value);
+    }
+
+    const createSectionSelect = document.getElementById('create_section');
+    if (createSectionSelect) {
+        createSectionSelect.addEventListener('change', () => updateCpnsUI('create'));
+        updateCpnsUI('create');
     }
 
     const createForm = document.querySelector('#createQuestionModal form');
@@ -164,6 +182,11 @@ document.addEventListener("DOMContentLoaded", function () {
         createForm.addEventListener('submit', function(e) {
             handleFormSubmit(e, 'createQuestionModal');
         });
+    }
+
+    const editSectionSelect = document.getElementById('edit_section');
+    if (editSectionSelect) {
+        editSectionSelect.addEventListener('change', () => updateCpnsUI('edit'));
     }
 
     const editModalEl = document.getElementById('editQuestionModal');
@@ -175,6 +198,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (editTypeSelect) {
             editTypeSelect.addEventListener('change', function() {
                 updateQuestionTypeUI('edit', this.value);
+                updateCpnsUI('edit');
             });
         }
 
@@ -196,6 +220,16 @@ document.addEventListener("DOMContentLoaded", function () {
                 updateQuestionTypeUI('edit', data.type);
             }
 
+            if (editSectionSelect && data.section) editSectionSelect.value = data.section;
+
+            let optionScores = {};
+            try { optionScores = JSON.parse(data.optionScores || '{}') || {}; } catch (error) { optionScores = {}; }
+            ['A', 'B', 'C', 'D', 'E'].forEach(letter => {
+                const scoreInput = document.getElementById(`edit_option_score_${letter}`);
+                if (scoreInput) scoreInput.value = optionScores[letter] || '';
+            });
+            updateCpnsUI('edit');
+
             if (data.type === 'coding') {
                 const codingLangs = options.allowed_languages || [];
                 editForm.querySelectorAll('input[name="allowed_languages[]"]').forEach(chk => {
@@ -210,7 +244,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     });
                 }
             } else {
-                ['A', 'B', 'C', 'D'].forEach(opt => {
+                ['A', 'B', 'C', 'D', 'E'].forEach(opt => {
                     const el = document.getElementById(`edit_option_${opt}`);
                     if (el) el.value = options[opt] || '';
                 });

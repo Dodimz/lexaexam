@@ -26,6 +26,14 @@
         </div>
     </div>
 
+    <div class="mb-3">
+        <label for="create_type" class="form-label-premium">Exam Type</label>
+        <select class="form-control-premium form-select" id="create_type" name="type">
+            <option value="standard">Standard</option>
+            <option value="cpns">CPNS (CAT)</option>
+        </select>
+    </div>
+
     <div class="row g-3 mb-4">
         <div class="col-md-6">
             <label for="create_category" class="form-label-premium">{{ __('exams.label_category') }} <span class="text-danger">*</span></label>
@@ -42,6 +50,40 @@
             <label for="create_duration" class="form-label-premium">{{ __('exams.label_duration') }} <span class="text-danger">*</span></label>
             <input type="number" class="form-control-premium" id="create_duration" name="duration" min="1" required>
         </div>
+    </div>
+
+    @php
+        $cpnsDefaults = [
+            'TWK' => ['name' => 'Tes Wawasan Kebangsaan', 'count' => 30, 'max' => 150, 'pass' => 65, 'mode' => 'fixed_correct'],
+            'TIU' => ['name' => 'Tes Intelegensia Umum', 'count' => 35, 'max' => 175, 'pass' => 80, 'mode' => 'fixed_correct'],
+            'TKP' => ['name' => 'Tes Karakteristik Pribadi', 'count' => 45, 'max' => 225, 'pass' => 166, 'mode' => 'option_score'],
+        ];
+    @endphp
+    <div id="create_cpns_sections" class="mb-4 p-3 rounded-3 border bg-light d-none">
+        <h6 class="fw-bold small text-uppercase mb-3">CPNS Subtests</h6>
+        @foreach($cpnsDefaults as $code => $default)
+            <div class="row g-2 mb-2 align-items-end cpns-section-row" data-code="{{ $code }}">
+                <input type="hidden" name="sections[{{ $loop->index }}][code]" value="{{ $code }}">
+                <input type="hidden" name="sections[{{ $loop->index }}][scoring_mode]" value="{{ $default['mode'] }}">
+                <input type="hidden" name="sections[{{ $loop->index }}][points_per_correct]" value="5">
+                <div class="col-md-4">
+                    <label class="form-label-premium small mb-1">{{ $code }}</label>
+                    <input type="text" class="form-control-premium form-control-sm" name="sections[{{ $loop->index }}][name]" value="{{ $default['name'] }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label-premium small mb-1">Jumlah soal</label>
+                    <input type="number" class="form-control-premium form-control-sm" name="sections[{{ $loop->index }}][question_count]" value="{{ $default['count'] }}" min="1">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label-premium small mb-1">Nilai maksimal</label>
+                    <input type="number" class="form-control-premium form-control-sm" name="sections[{{ $loop->index }}][max_score]" value="{{ $default['max'] }}" min="1">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label-premium small mb-1">Ambang batas</label>
+                    <input type="number" class="form-control-premium form-control-sm" name="sections[{{ $loop->index }}][passing_score]" value="{{ $default['pass'] }}" min="0">
+                </div>
+            </div>
+        @endforeach
     </div>
 
     <div class="row g-3 mb-4">
@@ -163,6 +205,28 @@ document.addEventListener('DOMContentLoaded', function() {
     if (planSelect) {
         planSelect.addEventListener('change', updatePricingLabels);
         updatePricingLabels(); 
+    }
+
+    const typeSelect = document.getElementById('create_type');
+    const sectionsBox = document.getElementById('create_cpns_sections');
+    const durationInput = document.getElementById('create_duration');
+    const marksInput = document.getElementById('create_total_marks');
+
+    function toggleCreateSections(applyDefaults) {
+        if (!typeSelect || !sectionsBox) return;
+        const isCpns = typeSelect.value === 'cpns';
+        sectionsBox.classList.toggle('d-none', !isCpns);
+        sectionsBox.querySelectorAll('input').forEach(input => { input.disabled = !isCpns; });
+
+        if (isCpns && applyDefaults) {
+            if (durationInput) durationInput.value = 100;
+            if (marksInput) marksInput.value = 550;
+        }
+    }
+
+    if (typeSelect) {
+        typeSelect.addEventListener('change', () => toggleCreateSections(true));
+        toggleCreateSections(true);
     }
 });
 </script>

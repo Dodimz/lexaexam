@@ -28,7 +28,7 @@ class ExamController extends Controller
 
     public function index(Request $request)
     {
-        $query = Exam::with(['category', 'plan'])->withCount('questions');
+        $query = Exam::with(['category', 'plan', 'sections'])->withCount('questions');
 
         if ($request->filled('search')) {
             $searchTerm = $request->search;
@@ -79,9 +79,10 @@ class ExamController extends Controller
             'is_paid' => $isPaid
         ]);
 
-        $validator = Validator::make($request->all(), [
+        $rules = [
             'title'                => 'required|string|max:255|unique:exams,title',
             'category_id'          => 'required|exists:categories,id',
+            'type'                 => 'required|in:standard,cpns',
             'duration'             => 'required|integer|min:1',
             'pass_percentage'      => 'required|numeric|min:1|max:100',
             'pricing_type'         => 'required|in:free,paid',
@@ -90,7 +91,13 @@ class ExamController extends Controller
             'end_date'             => 'nullable|date|before:2038-01-01',
             'result_date'          => 'nullable|date|before:2038-01-01',
             'plan_id'              => 'nullable|exists:plans,id'
-        ]);
+        ];
+
+        if ($request->type === 'cpns') {
+            $rules = array_merge($rules, $this->sectionRules());
+        }
+
+        $validator = Validator::make($request->all(), $rules);
 
         if ($validator->fails()) {
             if ($request->ajax()) {
@@ -99,13 +106,18 @@ class ExamController extends Controller
             return redirect()->back()->withErrors($validator)->withInput();
         }
 
+        if ($request->type === 'cpns' && !$this->validSections($request->sections)) {
+            return $this->sectionErrorResponse($request);
+        }
+
         $data = [
             'title'                => $request->title,
             'slug'                 => Str::slug($request->title) . '-' . rand(1000, 9999),
             'category_id'          => $request->category_id,
+            'type'                 => $request->type,
             'duration_minutes'     => $request->duration, 
             'pass_percentage'      => $request->pass_percentage,
-            'total_marks'          => $request->filled('total_marks') ? $request->total_marks : 0,
+            'total_marks'          => $request->type === 'cpns' ? $this->totalSectionScore($request->sections) : ($request->filled('total_marks') ? $request->total_marks : 0),
             'start_date'           => $request->filled('start_date') ? Carbon::parse($request->start_date)->format('Y-m-d H:i:s') : null,
             'end_date'             => $request->filled('end_date') ? Carbon::parse($request->end_date)->format('Y-m-d H:i:s') : null,
             'result_date'          => $request->filled('result_date') ? Carbon::parse($request->result_date)->format('Y-m-d H:i:s') : null,
@@ -127,6 +139,7 @@ class ExamController extends Controller
             }
 
             $exam = Exam::create($data);
+            $this->syncSections($exam, $request);
             
             DB::commit();
 
@@ -162,9 +175,10 @@ class ExamController extends Controller
             'is_paid' => $isPaid
         ]);
 
-        $validator = Validator::make($request->all(), [
+        $rules = [
             'title'                => 'required|string|max:255|unique:exams,title,' . $exam->id,
             'category_id'          => 'required|exists:categories,id',
+            'type'                 => 'required|in:standard,cpns',
             'duration'             => 'required|integer|min:1',
             'pass_percentage'      => 'required|numeric|min:1|max:100',
             'pricing_type'         => 'required|in:free,paid',
@@ -173,7 +187,13 @@ class ExamController extends Controller
             'end_date'             => 'nullable|date|before:2038-01-01',
             'result_date'          => 'nullable|date|before:2038-01-01',
             'plan_id'              => 'nullable|exists:plans,id'
-        ]);
+        ];
+
+        if ($request->type === 'cpns') {
+            $rules = array_merge($rules, $this->sectionRules());
+        }
+
+        $validator = Validator::make($request->all(), $rules);
 
         if ($validator->fails()) {
             if ($request->ajax()) {
@@ -182,13 +202,18 @@ class ExamController extends Controller
             return redirect()->back()->withErrors($validator)->withInput();
         }
 
+        if ($request->type === 'cpns' && !$this->validSections($request->sections)) {
+            return $this->sectionErrorResponse($request);
+        }
+
         $data = [
             'title'                => $request->title,
             'slug'                 => Str::slug($request->title),
             'category_id'          => $request->category_id,
+            'type'                 => $request->type,
             'duration_minutes'     => $request->duration,
             'pass_percentage'      => $request->pass_percentage,
-            'total_marks'          => $request->filled('total_marks') ? $request->total_marks : 0,
+            'total_marks'          => $request->type === 'cpns' ? $this->totalSectionScore($request->sections) : ($request->filled('total_marks') ? $request->total_marks : 0),
             'is_paid'              => $request->is_paid,
             'price'                => ($request->is_paid && $request->pricing_type === 'paid') ? $request->price : 0,
             'plan_id'              => $request->filled('plan_id') ? $request->plan_id : null,
@@ -197,6 +222,8 @@ class ExamController extends Controller
             'result_date'          => $request->filled('result_date') ? Carbon::parse($request->result_date)->format('Y-m-d H:i:s') : null,
             'description'          => $request->filled('description') ? $request->description : null,
         ];
+
+        DB::beginTransaction();
 
         try {
             if ($request->hasFile('banner')) {
@@ -216,12 +243,15 @@ class ExamController extends Controller
             }
 
             $exam->update($data);
+            $this->syncSections($exam, $request);
+            DB::commit();
 
             if ($request->ajax()) {
                 return response()->json(['status' => 'success', 'message' => __('exams.update_success')]);
             }
 
         } catch (\Exception $e) {
+            DB::rollBack();
             $errorMsg = 'Database Error: ' . $e->getMessage();
             if ($request->ajax()) {
                 return response()->json(['status' => 'error', 'message' => $errorMsg], 500);
@@ -288,5 +318,78 @@ class ExamController extends Controller
     {
         $exam = Exam::with('questions')->findOrFail($id);
         return redirect()->back()->with('info', __('exams.manage_questions', ['title' => $exam->title]));
+    }
+
+    private function sectionRules(): array
+    {
+        return [
+            'sections' => 'required|array|size:3',
+            'sections.*.code' => 'required|string|in:TWK,TIU,TKP',
+            'sections.*.name' => 'required|string|max:100',
+            'sections.*.question_count' => 'required|integer|min:1|max:200',
+            'sections.*.max_score' => 'required|numeric|min:1',
+            'sections.*.passing_score' => 'required|numeric|min:0',
+            'sections.*.points_per_correct' => 'nullable|numeric|min:0',
+            'sections.*.scoring_mode' => 'required|in:fixed_correct,option_score',
+        ];
+    }
+
+    private function validSections($sections): bool
+    {
+        if (!is_array($sections)) return false;
+
+        $codes = collect($sections)->pluck('code')->sort()->values()->all();
+        if ($codes !== ['TIU', 'TKP', 'TWK']) return false;
+
+        foreach ($sections as $section) {
+            if ((float) ($section['passing_score'] ?? 0) > (float) ($section['max_score'] ?? 0)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function sectionErrorResponse(Request $request)
+    {
+        $message = 'Subtes harus TWK, TIU, dan TKP masing-masing sekali, dengan ambang batas tidak melebihi nilai maksimal.';
+
+        if ($request->ajax()) {
+            return response()->json(['status' => 'error', 'message' => $message], 422);
+        }
+
+        return redirect()->back()->with('error', $message)->withInput();
+    }
+
+    private function totalSectionScore($sections): float
+    {
+        return (float) collect($sections)->sum(fn ($section) => (float) ($section['max_score'] ?? 0));
+    }
+
+    private function syncSections(Exam $exam, Request $request): void
+    {
+        if (!$exam->isCpns()) {
+            $exam->sections()->delete();
+            return;
+        }
+
+        $order = ['TWK' => 1, 'TIU' => 2, 'TKP' => 3];
+
+        foreach ($request->sections as $section) {
+            $exam->sections()->updateOrCreate(
+                ['code' => $section['code']],
+                [
+                    'name' => $section['name'],
+                    'question_count' => (int) $section['question_count'],
+                    'max_score' => (float) $section['max_score'],
+                    'passing_score' => (float) $section['passing_score'],
+                    'scoring_mode' => $section['scoring_mode'],
+                    'points_per_correct' => $section['scoring_mode'] === 'fixed_correct'
+                        ? (float) ($section['points_per_correct'] ?? 5)
+                        : 0,
+                    'sort_order' => $order[$section['code']] ?? 0,
+                ]
+            );
+        }
     }
 }

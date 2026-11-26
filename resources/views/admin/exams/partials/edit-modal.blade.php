@@ -14,6 +14,14 @@
         <input type="text" class="form-control-premium" id="edit_title" name="title" required>
     </div>
     
+    <div class="mb-3">
+        <label for="edit_type" class="form-label-premium">Exam Type</label>
+        <select class="form-control-premium form-select" id="edit_type" name="type">
+            <option value="standard">Standard</option>
+            <option value="cpns">CPNS (CAT)</option>
+        </select>
+    </div>
+
     <div class="mb-4">
         <label for="edit_banner" class="form-label-premium">{{ __('exams.label_banner') }}</label>
         <div class="d-flex gap-3 align-items-center">
@@ -43,6 +51,40 @@
             <label for="edit_duration" class="form-label-premium">{{ __('exams.label_duration') }} <span class="text-danger">*</span></label>
             <input type="number" class="form-control-premium" id="edit_duration" name="duration" min="1" required>
         </div>
+    </div>
+
+    @php
+        $cpnsDefaults = [
+            'TWK' => ['name' => 'Tes Wawasan Kebangsaan', 'count' => 30, 'max' => 150, 'pass' => 65, 'mode' => 'fixed_correct'],
+            'TIU' => ['name' => 'Tes Intelegensia Umum', 'count' => 35, 'max' => 175, 'pass' => 80, 'mode' => 'fixed_correct'],
+            'TKP' => ['name' => 'Tes Karakteristik Pribadi', 'count' => 45, 'max' => 225, 'pass' => 166, 'mode' => 'option_score'],
+        ];
+    @endphp
+    <div id="edit_cpns_sections" class="mb-4 p-3 rounded-3 border bg-light d-none">
+        <h6 class="fw-bold small text-uppercase mb-3">CPNS Subtests</h6>
+        @foreach($cpnsDefaults as $code => $default)
+            <div class="row g-2 mb-2 align-items-end cpns-section-row" data-code="{{ $code }}">
+                <input type="hidden" name="sections[{{ $loop->index }}][code]" value="{{ $code }}">
+                <input type="hidden" name="sections[{{ $loop->index }}][scoring_mode]" value="{{ $default['mode'] }}">
+                <input type="hidden" name="sections[{{ $loop->index }}][points_per_correct]" value="5">
+                <div class="col-md-4">
+                    <label class="form-label-premium small mb-1">{{ $code }}</label>
+                    <input type="text" class="form-control-premium form-control-sm" name="sections[{{ $loop->index }}][name]" value="{{ $default['name'] }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label-premium small mb-1">Jumlah soal</label>
+                    <input type="number" class="form-control-premium form-control-sm" name="sections[{{ $loop->index }}][question_count]" value="{{ $default['count'] }}" min="1">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label-premium small mb-1">Nilai maksimal</label>
+                    <input type="number" class="form-control-premium form-control-sm" name="sections[{{ $loop->index }}][max_score]" value="{{ $default['max'] }}" min="1">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label-premium small mb-1">Ambang batas</label>
+                    <input type="number" class="form-control-premium form-control-sm" name="sections[{{ $loop->index }}][passing_score]" value="{{ $default['pass'] }}" min="0">
+                </div>
+            </div>
+        @endforeach
     </div>
 
     <div class="row g-3 mb-4">
@@ -164,6 +206,47 @@ document.addEventListener('DOMContentLoaded', function() {
     if (editPlanSelect) {
         editPlanSelect.addEventListener('change', updateEditPricingLabels);
         updateEditPricingLabels(); 
+    }
+
+    const editTypeSelect = document.getElementById('edit_type');
+    const editSectionsBox = document.getElementById('edit_cpns_sections');
+    const editDurationInput = document.getElementById('edit_duration');
+    const editMarksInput = document.getElementById('edit_total_marks');
+
+    window.toggleEditSections = function(applyDefaults) {
+        if (!editTypeSelect || !editSectionsBox) return;
+        const isCpns = editTypeSelect.value === 'cpns';
+        editSectionsBox.classList.toggle('d-none', !isCpns);
+        editSectionsBox.querySelectorAll('input').forEach(input => { input.disabled = !isCpns; });
+
+        if (isCpns && applyDefaults) {
+            if (editDurationInput) editDurationInput.value = 100;
+            if (editMarksInput) editMarksInput.value = 550;
+        }
+    };
+
+    window.fillEditSections = function(sections) {
+        if (!editSectionsBox || !Array.isArray(sections)) return;
+        sections.forEach(section => {
+            const row = editSectionsBox.querySelector(`.cpns-section-row[data-code="${section.code}"]`);
+            if (!row) return;
+            const fields = {
+                name: 'input[name*="[name]"]',
+                question_count: 'input[name*="[question_count]"]',
+                max_score: 'input[name*="[max_score]"]',
+                passing_score: 'input[name*="[passing_score]"]',
+                points_per_correct: 'input[name*="[points_per_correct]"]'
+            };
+            Object.keys(fields).forEach(key => {
+                const input = row.querySelector(fields[key]);
+                if (input && section[key] !== undefined && section[key] !== null) input.value = section[key];
+            });
+        });
+    };
+
+    if (editTypeSelect) {
+        editTypeSelect.addEventListener('change', () => window.toggleEditSections(true));
+        window.toggleEditSections(false);
     }
 
     const editModal = document.getElementById('editExamModal');

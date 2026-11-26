@@ -21,6 +21,7 @@ class DatabaseSeeder extends Seeder
         // 3. Core Data
         $this->call(CategorySeeder::class);
         $this->call(ExamSeeder::class);
+        $this->call(CpnsExamSeeder::class);
         $this->call(ResultSeeder::class);
         $this->call(PlanSeeder::class);
         $this->call(PaymentSeeder::class);

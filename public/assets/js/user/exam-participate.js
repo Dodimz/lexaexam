@@ -128,6 +128,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const qNumEl = document.getElementById('current-q-num');
         if(qNumEl) qNumEl.textContent = index + 1;
+
+        const sectionEl = document.getElementById('current-section');
+        if(sectionEl) sectionEl.textContent = q.section_code ? `${q.section_code}` : '';
         
         let mediaHtml = '';
         if (q.media_type && q.media_type !== 'text') {
@@ -478,6 +481,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 confirmSubmission();
             });
         }
+
+        window.ExamLogic.goToIndex = function(index) {
+            if (!questions[index]) return;
+            if (window.currentQuestion) window.saveAnswer(window.currentQuestion);
+            currentIndex = index;
+            renderQuestion(currentIndex);
+            renderNavigator();
+            updateStats();
+        };
+
+        document.querySelectorAll('.cpns-section-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                window.ExamLogic.goToIndex(parseInt(tab.dataset.index, 10));
+            });
+        });
 
         const langSelect = document.getElementById('language-select');
         if(langSelect) {

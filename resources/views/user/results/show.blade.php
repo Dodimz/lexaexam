@@ -51,6 +51,36 @@
     </div>
 </div>
 
+@if($result->exam->isCpns() && isset($sectionScores) && $sectionScores->isNotEmpty())
+    <div class="analysis-section">
+        <h3 class="page-title analysis-title">Nilai per Subtes</h3>
+        <div class="table-responsive">
+            <table class="table align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Subtes</th>
+                        <th>Skor</th>
+                        <th>Ambang Batas</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($sectionScores as $sectionScore)
+                        <tr>
+                            <td class="fw-bold">{{ $sectionScore->section->code ?? '-' }} — {{ $sectionScore->section->name ?? '' }}</td>
+                            <td>{{ number_format($sectionScore->score, 2) }} / {{ number_format($sectionScore->section->max_score ?? 0, 2) }}</td>
+                            <td>{{ number_format($sectionScore->section->passing_score ?? 0, 2) }}</td>
+                            <td>
+                                <span class="badge {{ $sectionScore->passed ? 'bg-success' : 'bg-danger' }}">{{ $sectionScore->passed ? __('frontend.status_passed') : __('frontend.status_failed') }}</span>
+                            </td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+    </div>
+@endif
+
 <div class="analysis-section">
     <h3 class="page-title analysis-title">{{ __('frontend.analysis_title') }}</h3>
     @foreach ($questionBreakdown as $index => $q)

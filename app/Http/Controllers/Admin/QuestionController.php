@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Exam;
+use App\Models\ExamSection;
 use App\Models\Question;
 use App\Services\AI\QuestionGeneratorService;
 use Illuminate\Http\Request;
@@ -14,17 +15,23 @@ class QuestionController extends Controller
 {
     public function index($examId)
     {
-        $exam = Exam::with(['category'])->withCount('questions')->findOrFail($examId);
+        $exam = Exam::with(['category', 'sections'])->withCount('questions')->findOrFail($examId);
         
         $questions = Question::where('exam_id', $examId)
             ->orderBy('created_at', 'desc')
             ->paginate(10);
 
+        $sectionCounts = Question::where('exam_id', $examId)
+            ->whereNotNull('exam_section_id')
+            ->select('exam_section_id', DB::raw('count(*) as total'))
+            ->groupBy('exam_section_id')
+            ->pluck('total', 'exam_section_id');
+
         $codingAssessments = class_exists('\Addons\CodingAssessments\Models\CodingAssessment') 
             ? \Addons\CodingAssessments\Models\CodingAssessment::all() 
             : collect();
 
-        return view('admin.exams.questions.index', compact('exam', 'questions', 'codingAssessments'));
+        return view('admin.exams.questions.index', compact('exam', 'questions', 'codingAssessments', 'sectionCounts'));
     }
 
     public function generate(Request $request, QuestionGeneratorService $aiService, $examId)
@@ -61,19 +68,31 @@ class QuestionController extends Controller
              return $this->storeBatch($request, $examId);
         }
 
+        $section = $this->sectionForRequest($examId, $request->exam_section_id);
+        $optionScored = $section && $section->scoring_mode === 'option_score';
+        $correctRule = ($optionScored || $request->type === 'coding') ? 'nullable' : 'required';
+
         $validator = Validator::make($request->all(), [
             'exam_id' => 'required|integer|in:' . $examId,
             'question_text' => 'required|string',
             'type' => 'required|in:mcq,true_false,short_answer,coding',
-            'correct_answer' => 'required_unless:type,coding|string|max:255',
+            'correct_answer' => $correctRule . '|string|max:255',
             'options' => 'nullable|array',
             'explanation' => 'nullable|string',
+            'exam_section_id' => 'nullable|integer',
+            'option_scores' => 'nullable|array',
+            'option_scores.*' => 'integer|min:1|max:5',
             'allowed_languages' => 'required_if:type,coding|array',
             'test_cases' => 'required_if:type,coding|array'
         ]);
 
         if ($validator->fails()) {
             return response()->json(['status' => 'error', 'errors' => $validator->errors()], 422);
+        }
+
+        $optionScores = $this->normalizedScores($request->option_scores);
+        if ($optionScored && count($optionScores) !== 5) {
+            return response()->json(['status' => 'error', 'message' => 'TKP memerlukan skor untuk opsi A–E (1–5).'], 422);
         }
         
         $isMcq = $request->type === 'mcq';
@@ -91,11 +110,13 @@ class QuestionController extends Controller
 
         $question = Question::create([
             'exam_id'        => $examId,
+            'exam_section_id'=> $section ? $section->id : null,
             'question_text'  => $request->question_text,
             'type'           => $request->type,
-            'correct_answer' => $isCoding ? 'coding_submission' : $request->correct_answer,
+            'correct_answer' => $isCoding ? 'coding_submission' : ($request->correct_answer ?? ''),
             'explanation'    => $request->explanation,
-            'options'        => $options, 
+            'options'        => $options,
+            'option_scores'  => $optionScored ? $optionScores : null,
         ]);
 
         return response()->json([
@@ -108,6 +129,8 @@ class QuestionController extends Controller
     public function import(Request $request, $examId)
     {
         try {
+            $exam = Exam::with('sections')->findOrFail($examId);
+            $sectionsByCode = $exam->sections->keyBy('code');
             $validator = Validator::make($request->all(), [
                 'file' => 'required|file|max:20480'
             ]);
@@ -154,10 +177,13 @@ class QuestionController extends Controller
             $questions = [];
             $totalImported = 0;
             $now = now();
+            $line = 1;
+            $importErrors = [];
 
             DB::beginTransaction();
 
             while (($data = fgetcsv($handle, 10000, ",")) !== FALSE) {
+                $line++;
                 if (empty(array_filter($data))) continue;
 
                 if (count($data) < count($header)) {
@@ -186,13 +212,32 @@ class QuestionController extends Controller
                     $options = json_encode($formattedOptions);
                 }
 
+                $section = null;
+                $optionScores = null;
+                $sectionCode = strtoupper(trim($row['section'] ?? ''));
+                if ($sectionCode !== '') {
+                    $section = $sectionsByCode->get($sectionCode);
+                    if (!$section) {
+                        $importErrors[] = "Baris {$line}: kode subtes '{$sectionCode}' tidak dikenal.";
+                    } elseif ($section->scoring_mode === 'option_score') {
+                        $optionScores = $this->parseOptionScores($row['option_scores'] ?? '');
+                        if (count($optionScores) !== 5) {
+                            $importErrors[] = "Baris {$line}: TKP memerlukan 5 skor opsi (1–5) dipisah '|'.";
+                        }
+                    }
+                }
+
+                if (count($importErrors) >= 10) break;
+
                 $questions[] = [
                     'exam_id'        => $examId,
+                    'exam_section_id'=> $section ? $section->id : null,
                     'question_text'  => $row['question_text'] ?? 'Untitled Question',
                     'type'           => $type,
                     'correct_answer' => trim($row['correct_answer'] ?? ''),
                     'explanation'    => $row['explanation'] ?? null,
                     'options'        => $options,
+                    'option_scores'  => $optionScores ? json_encode($optionScores) : null,
                     'created_at'     => $now,
                     'updated_at'     => $now,
                 ];
@@ -204,6 +249,15 @@ class QuestionController extends Controller
                 }
             }
 
+            if (count($importErrors) > 0) {
+                DB::rollBack();
+                fclose($handle);
+                return response()->json([
+                    'status' => 'error',
+                    'message' => implode(' ', array_slice($importErrors, 0, 5))
+                ]);
+            }
+
             if (count($questions) > 0) {
                 Question::insert($questions);
                 $totalImported += count($questions);
@@ -212,9 +266,19 @@ class QuestionController extends Controller
             DB::commit();
             fclose($handle);
 
+            $counts = Question::where('exam_id', $examId)
+                ->whereNotNull('exam_section_id')
+                ->select('exam_section_id', DB::raw('count(*) as total'))
+                ->groupBy('exam_section_id')
+                ->pluck('total', 'exam_section_id');
+
+            $summary = $exam->sections
+                ->map(fn ($section) => $section->code . ': ' . ($counts[$section->id] ?? 0) . '/' . $section->question_count)
+                ->implode(' | ');
+
             return response()->json([
-                'status' => 'success', 
-                'message' => $totalImported . ' questions imported successfully.'
+                'status' => 'success',
+                'message' => $totalImported . ' questions imported successfully.' . ($summary ? ' (' . $summary . ')' : '')
             ]);
 
         } catch (\Exception $e) {
@@ -236,7 +300,7 @@ class QuestionController extends Controller
             'Content-Disposition' => 'attachment; filename="question_template.csv"',
         ];
 
-        $columns = ['question_text', 'type', 'correct_answer', 'options', 'explanation'];
+        $columns = ['question_text', 'type', 'correct_answer', 'options', 'explanation', 'section', 'option_scores'];
 
         $callback = function() use ($columns) {
             $file = fopen('php://output', 'w');
@@ -246,14 +310,27 @@ class QuestionController extends Controller
                 'mcq',
                 'A',
                 'Paris|London|Berlin|Madrid',
-                'Paris is the capital and most populous city of France.'
+                'Paris is the capital and most populous city of France.',
+                'TWK',
+                ''
             ]);
             fputcsv($file, [
-                'Laravel is a PHP framework.',
-                'true_false',
-                'True',
+                '2 + 2 = ?',
+                'mcq',
+                'B',
+                '3|4|5|6',
                 '',
-                'Laravel is indeed a popular PHP web framework.'
+                'TIU',
+                ''
+            ]);
+            fputcsv($file, [
+                'You notice a colleague struggling with a task. What do you do?',
+                'mcq',
+                '',
+                'Ignore|Offer help|Report them|Laugh|Wait',
+                'TKP uses option scores 1-5, matching options A-E.',
+                'TKP',
+                '1|5|3|2|4'
             ]);
             fclose($file);
         };
@@ -263,15 +340,27 @@ class QuestionController extends Controller
 
     public function update(Request $request, $examId, $questionId) 
     {
+        $section = $this->sectionForRequest($examId, $request->exam_section_id);
+        $optionScored = $section && $section->scoring_mode === 'option_score';
+        $correctRule = ($optionScored || $request->type === 'coding') ? 'nullable' : 'required';
+
         $request->validate([
             'question_text' => 'required|string',
             'type' => 'required|in:mcq,true_false,short_answer,coding',
-            'correct_answer' => 'required_unless:type,coding|string|max:255',
+            'correct_answer' => $correctRule . '|string|max:255',
             'options' => 'nullable|array',
             'explanation' => 'nullable|string',
+            'exam_section_id' => 'nullable|integer',
+            'option_scores' => 'nullable|array',
+            'option_scores.*' => 'integer|min:1|max:5',
             'allowed_languages' => 'required_if:type,coding|array',
             'test_cases' => 'required_if:type,coding|array'
         ]);
+
+        $optionScores = $this->normalizedScores($request->option_scores);
+        if ($optionScored && count($optionScores) !== 5) {
+            return response()->json(['status' => 'error', 'message' => 'TKP memerlukan skor untuk opsi A–E (1–5).'], 422);
+        }
         
         $question = Question::where('exam_id', $examId)->findOrFail($questionId);
         
@@ -289,11 +378,13 @@ class QuestionController extends Controller
         }
 
         $question->update([
+            'exam_section_id'=> $section ? $section->id : null,
             'question_text'  => $request->question_text,
             'type'           => $request->type,
-            'correct_answer' => $isCoding ? 'coding_submission' : $request->correct_answer,
+            'correct_answer' => $isCoding ? 'coding_submission' : ($request->correct_answer ?? ''),
             'explanation'    => $request->explanation,
-            'options'        => $options, 
+            'options'        => $options,
+            'option_scores'  => $optionScored ? $optionScores : null,
         ]);
         
         return response()->json(['status' => 'success', 'message' => __('questions.update_success')]);
@@ -362,5 +453,39 @@ class QuestionController extends Controller
         $question = Question::where('exam_id', $examId)->findOrFail($questionId);
         $question->delete();
         return redirect()->back()->with('success', __('questions.delete_success'));
+    }
+
+    private function sectionForRequest($examId, $sectionId): ?ExamSection
+    {
+        if (!$sectionId) return null;
+        return ExamSection::where('exam_id', $examId)->findOrFail($sectionId);
+    }
+
+    private function normalizedScores($scores): array
+    {
+        $result = [];
+        foreach (['A', 'B', 'C', 'D', 'E'] as $letter) {
+            if (isset($scores[$letter]) && $scores[$letter] !== '') {
+                $result[$letter] = (int) $scores[$letter];
+            }
+        }
+        return $result;
+    }
+
+    private function parseOptionScores($value): array
+    {
+        if (trim((string) $value) === '') return [];
+
+        $letters = ['A', 'B', 'C', 'D', 'E'];
+        $scores = [];
+        foreach (explode('|', $value) as $index => $part) {
+            if (!isset($letters[$index])) break;
+            $part = trim($part);
+            if ($part === '') continue;
+            $score = (int) $part;
+            if ($score < 1 || $score > 5) return [];
+            $scores[$letters[$index]] = $score;
+        }
+        return $scores;
     }
 }

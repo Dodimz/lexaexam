@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use App\Models\StudentExamSession;
 use App\Models\StudentExamAnswer;
 use App\Models\SystemSetting;
+use App\Services\Exam\CpnsScoringService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Carbon;
@@ -119,7 +120,7 @@ class ResultController extends Controller
             'percentage' => $session->progress_percentage,
             'score_obtained' => $session->score,
             'total_marks' => $maxPossibleScore,
-            'is_passed' => $session->progress_percentage >= ($session->exam->pass_percentage ?? 50),
+            'is_passed' => $session->is_passed,
             'correct_count' => $correctCount,
             'incorrect_count' => $incorrectCount,
             'skipped_count' => $skippedCount,
@@ -133,7 +134,11 @@ class ResultController extends Controller
             'user' => $session->user
         ];
 
-        return view('user.results.show', compact('result', 'questionBreakdown'));
+        $sectionScores = $session->exam->isCpns()
+            ? $session->sectionScores()->with('section')->get()
+            : collect();
+
+        return view('user.results.show', compact('result', 'questionBreakdown', 'sectionScores'));
     }
     
     public function certificates()
@@ -160,10 +165,7 @@ class ResultController extends Controller
                 continue; 
             }
 
-            $passedSession = $sessions->first(function ($session) {
-                $passMark = $session->exam->pass_percentage ?? 50;
-                return $session->progress_percentage >= $passMark;
-            });
+            $passedSession = $sessions->first(fn ($session) => $session->is_passed);
 
             if ($passedSession) {
                 $pendingCertificates->push($passedSession);
@@ -186,8 +188,7 @@ class ResultController extends Controller
             ->with(['user', 'exam'])
             ->findOrFail($id);
         
-        $passMark = $session->exam->pass_percentage ?? 50;
-        $isPassed = $session->progress_percentage >= $passMark;
+        $isPassed = $session->is_passed;
 
         if (!$isPassed || !$session->certificate_issued_at) {
             return redirect()->back()->with('error', __('frontend.certificate_not_available'));
@@ -253,6 +254,11 @@ class ResultController extends Controller
     protected function calculateAndSaveScore(StudentExamSession $session)
     {
         $session->loadMissing(['answers.question', 'exam.questions']);
+
+        if ($session->exam->isCpns()) {
+            app(CpnsScoringService::class)->score($session);
+            return;
+        }
         
         $correctCount = 0;
         $totalAnswered = 0;
